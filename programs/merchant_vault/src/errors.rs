@@ -8,4 +8,8 @@ pub enum VaultError {
     InsufficientFunds,
     #[msg("Payment amount must be greater than zero")]
     InvalidPaymentAmount,
+    #[msg("Math overflow: numbers grew too large during fee calculation")]
+    MathOverflow,
+    #[msg("Math underflow: fee subtraction resulted in an invalid amount")]
+    MathUnderflow,
 }

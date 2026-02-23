@@ -44,7 +44,7 @@ pub struct PayWithSol<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + Payment::LEN,
+        space = Payment::DISCRIMINATOR.len() + Payment::INIT_SPACE,
         seeds = [b"payment", merchant.key().as_ref(), payer.key().as_ref()],
         bump,
     )]
@@ -59,12 +59,16 @@ pub fn handler(ctx: Context<PayWithSol>, amount: u64) -> Result<()> {
     let config = &ctx.accounts.config;
     let payer = &ctx.accounts.payer;
 
+    // If multiplication overflows, return MathOverflow instead of crashing
     let fee = amount
         .checked_mul(config.platform_fee_bps as u64)
-        .unwrap()
+        .ok_or(crate::errors::VaultError::MathOverflow)?
         / 10_000;
 
-    let merchant_amount = amount.checked_sub(fee).unwrap();
+    // If subtraction underflows, return MathUnderflow instead of crashing
+    let merchant_amount = amount
+        .checked_sub(fee)
+        .ok_or(crate::errors::VaultError::MathUnderflow)?;
 
     // Transfer to Merchant Vault
     let cpi_ctx_vault = CpiContext::new(

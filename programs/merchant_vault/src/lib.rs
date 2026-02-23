@@ -4,7 +4,7 @@ pub mod errors;
 
 use anchor_lang::prelude::*;
 // Bring the structs into the top-level scope so #[program] can find them easily
-use crate::instructions::*; 
+use crate::instructions::*;
 
 declare_id!("2vm8xz2TFAQH2N6ijqLNRt6J7bh8h7hy92hYM19Vy4SD");
 

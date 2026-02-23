@@ -6,7 +6,7 @@ pub struct InitializeTreasury<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + Treasury::LEN,
+        space = Treasury::DISCRIMINATOR.len() + Treasury::INIT_SPACE,
         seeds = [b"treasury"],
         bump
     )]

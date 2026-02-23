@@ -15,7 +15,7 @@ pub struct RegisterMerchant<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + Merchant::LEN,
+        space = Merchant::DISCRIMINATOR.len() + Merchant::INIT_SPACE,
         seeds = [b"merchant", authority.key().as_ref()],
         bump,
     )]
@@ -24,7 +24,7 @@ pub struct RegisterMerchant<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + Vault::LEN,
+        space = Vault::DISCRIMINATOR.len() + Vault::INIT_SPACE,
         seeds = [b"vault", merchant.key().as_ref()],
         bump,
     )]

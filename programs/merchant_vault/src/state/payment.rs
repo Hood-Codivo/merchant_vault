@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 
+#[derive(InitSpace)]  // Anchor calculates the size for you
 #[account]
 pub struct Payment {
     pub payer: Pubkey,
@@ -8,8 +9,4 @@ pub struct Payment {
     pub fee_amount: u64,
     pub timestamp: i64,
     pub bump: u8,
-}
-
-impl Payment {
-    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 1;
 }
