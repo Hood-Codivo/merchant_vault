@@ -58,7 +58,7 @@ pub struct PayWithToken<'info> {
         seeds = [
             b"payment",
             merchant.key().as_ref(),
-            payer.key().as_ref(),
+            &merchant.payment_count.to_le_bytes()
         ],
         bump
     )]

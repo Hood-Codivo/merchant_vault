@@ -12,6 +12,7 @@ use crate::state::{
 #[derive(Accounts)]
 #[instruction(amount: u64)]
 pub struct PayWithSol<'info> {
+
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -22,6 +23,7 @@ pub struct PayWithSol<'info> {
     pub config: Account<'info, Config>,
 
     #[account(
+        mut,
         seeds = [b"merchant", merchant.authority.as_ref()],
         bump = merchant.bump,
     )]
@@ -45,7 +47,7 @@ pub struct PayWithSol<'info> {
         init,
         payer = payer,
         space = Payment::DISCRIMINATOR.len() + Payment::INIT_SPACE,
-        seeds = [b"payment", merchant.key().as_ref(), payer.key().as_ref()],
+        seeds = [b"payment", merchant.key().as_ref(), &merchant.payment_count.to_le_bytes()],
         bump,
     )]
     pub payment: Account<'info, Payment>,
@@ -58,6 +60,8 @@ pub fn handler(ctx: Context<PayWithSol>, amount: u64) -> Result<()> {
 
     let config = &ctx.accounts.config;
     let payer = &ctx.accounts.payer;
+
+    let merchant = &mut ctx.accounts.merchant;
 
     // If multiplication overflows, return MathOverflow instead of crashing
     let fee = amount
@@ -98,6 +102,8 @@ pub fn handler(ctx: Context<PayWithSol>, amount: u64) -> Result<()> {
     payment.fee_amount = fee;
     payment.timestamp = Clock::get()?.unix_timestamp;
     payment.bump = ctx.bumps.payment;
+
+    merchant.payment_count = merchant.payment_count.checked_add(1).ok_or(crate::errors::VaultError::MathOverflow)?;
 
     Ok(())
 }
