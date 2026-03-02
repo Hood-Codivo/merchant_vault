@@ -1,17 +1,16 @@
 [toolchain]
-package_manager = "yarn"
 anchor_version = "0.32.1"
+package_manager = "yarn"
 
 [features]
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-merchant_vault = "2vm8xz2TFAQH2N6ijqLNRt6J7bh8h7hy92hYM19Vy4SD"
-
-
 [programs.devnet]
-merchant_vault = "2vm8xz2TFAQH2N6ijqLNRt6J7bh8h7hy92hYM19Vy4SD"
+merchant_vault = "57iN23Yr2fMV8bLcmtCXXWsnayE7LidWsHDYGRsn7bPZ"
+
+[programs.localnet]
+merchant_vault = "57iN23Yr2fMV8bLcmtCXXWsnayE7LidWsHDYGRsn7bPZ"
 
 [registry]
 url = "https://api.apr.dev"

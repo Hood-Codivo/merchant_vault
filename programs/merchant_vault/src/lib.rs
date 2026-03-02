@@ -3,17 +3,14 @@ pub mod instructions;
 pub mod errors;
 
 use anchor_lang::prelude::*;
-// Bring the structs into the top-level scope so #[program] can find them easily
 use crate::instructions::*;
 
-declare_id!("2vm8xz2TFAQH2N6ijqLNRt6J7bh8h7hy92hYM19Vy4SD");
+declare_id!("57iN23Yr2fMV8bLcmtCXXWsnayE7LidWsHDYGRsn7bPZ");
 
 #[program]
 pub mod merchant_vault {
     use super::*;
 
-    // Note: We call instructions::handler because the mod and the function 
-    // often share names.
     pub fn initialize_config(ctx: Context<Initialize>, fee_bps: u16) -> Result<()> {
         instructions::initialize_config::handler(ctx, fee_bps)
     }
@@ -36,5 +33,10 @@ pub mod merchant_vault {
 
     pub fn withdraw_sol(ctx: Context<WithdrawSol>, amount: u64) -> Result<()> {
         instructions::withdraw_sol::handler(ctx, amount)
+    }
+
+    // ✅ Added withdraw_token instruction
+    pub fn withdraw_token(ctx: Context<WithdrawToken>, amount: u64) -> Result<()> {
+        instructions::withdraw_token::handler(ctx, amount)
     }
 }

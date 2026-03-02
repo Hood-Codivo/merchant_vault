@@ -15,20 +15,41 @@ describe("merchant-vault", () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.MerchantVault as Program<MerchantVault>;
-  const payer = provider.wallet;
+  const payer = provider.wallet as anchor.Wallet;
 
+  // ── Shared state ──────────────────────────────────────────────────────────
+  let configPda: anchor.web3.PublicKey;
+  let treasuryPda: anchor.web3.PublicKey;
+  let merchantPda: anchor.web3.PublicKey;
+  let vaultPda: anchor.web3.PublicKey;
   let mint: anchor.web3.PublicKey;
+  let payerAta: Awaited<ReturnType<typeof getOrCreateAssociatedTokenAccount>>;
+  let vaultAta: Awaited<ReturnType<typeof getOrCreateAssociatedTokenAccount>>;
+  let treasuryAta: Awaited<
+    ReturnType<typeof getOrCreateAssociatedTokenAccount>
+  >;
 
-  it("Full token payment flow", async () => {
-    /*
-      Initialize Config
-    */
-
-    const [configPda] = anchor.web3.PublicKey.findProgramAddressSync(
+  before(() => {
+    [configPda] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("config")],
       program.programId,
     );
+    [treasuryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury")],
+      program.programId,
+    );
+    [merchantPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("merchant"), payer.publicKey.toBuffer()],
+      program.programId,
+    );
+    [vaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), merchantPda.toBuffer()],
+      program.programId,
+    );
+  });
 
+  // ── 1 ─────────────────────────────────────────────────────────────────────
+  it("1. Initialize config with 150 bps fee", async () => {
     await program.methods
       .initializeConfig(150)
       .accounts({
@@ -38,19 +59,14 @@ describe("merchant-vault", () => {
       })
       .rpc();
 
-    const configAccount = await program.account.config.fetch(configPda);
-    console.log("\n=== CONFIG ACCOUNT ===");
-    console.log("Config PDA:          ", configPda.toBase58());
+    const config = await program.account.config.fetch(configPda);
 
-    /*
-      Initialize Treasury
-    */
+    // ✅ Your Rust struct uses platform_fee_bps → JS sees platformFeeBps
+    assert.equal(config.platformFeeBps, 150, "Platform fee should be 150 bps");
+  });
 
-    const [treasuryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("treasury")],
-      program.programId,
-    );
-
+  // ── 2 ─────────────────────────────────────────────────────────────────────
+  it("2. Initialize treasury account", async () => {
     await program.methods
       .initializeTreasury()
       .accounts({
@@ -60,31 +76,12 @@ describe("merchant-vault", () => {
       })
       .rpc();
 
-    const treasuryOnChain = await program.account.treasury.fetch(treasuryPda);
-    console.log("\n=== TREASURY ACCOUNT ===");
-    console.log("Treasury PDA:        ", treasuryPda.toBase58());
-    console.log("Bump:                ", treasuryOnChain.bump);
-    const treasuryLamports = await provider.connection.getBalance(treasuryPda);
-    console.log(
-      "Treasury SOL:        ",
-      treasuryLamports / anchor.web3.LAMPORTS_PER_SOL,
-      "SOL",
-    );
+    const treasury = await program.account.treasury.fetch(treasuryPda);
+    assert.ok(treasury.bump, "Treasury should have a bump");
+  });
 
-    /*
-      Create Merchant + Vault PDA
-    */
-
-    const [merchantPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("merchant"), payer.publicKey.toBuffer()],
-      program.programId,
-    );
-
-    const [vaultPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), merchantPda.toBuffer()],
-      program.programId,
-    );
-
+  // ── 3 ─────────────────────────────────────────────────────────────────────
+  it("3. Initialize merchant and vault PDAs", async () => {
     await program.methods
       .initializeMerchant()
       .accounts({
@@ -95,28 +92,48 @@ describe("merchant-vault", () => {
       })
       .rpc();
 
-    const merchantAccount = await program.account.merchant.fetch(merchantPda);
-    const vaultOnChain = await program.account.vault.fetch(vaultPda);
-    const vaultLamports = await provider.connection.getBalance(vaultPda);
+    const merchant = await program.account.merchant.fetch(merchantPda);
+    const vault = await program.account.vault.fetch(vaultPda);
 
-    console.log("\n=== MERCHANT ACCOUNT ===");
-    console.log("Merchant PDA:        ", merchantPda.toBase58());
-    console.log("Authority:           ", merchantAccount.authority.toBase58());
-
-    console.log("\n=== VAULT ACCOUNT ===");
-    console.log("Vault PDA:           ", vaultPda.toBase58());
-    console.log("Merchant (ref):      ", vaultOnChain.merchant.toBase58());
-    console.log("Bump:                ", vaultOnChain.bump);
-    console.log(
-      "Vault SOL Balance:   ",
-      vaultLamports / anchor.web3.LAMPORTS_PER_SOL,
-      "SOL",
+    assert.equal(
+      merchant.authority.toBase58(),
+      payer.publicKey.toBase58(),
+      "Merchant authority should match payer",
     );
+    assert.equal(
+      vault.merchant.toBase58(),
+      merchantPda.toBase58(),
+      "Vault should reference merchant PDA",
+    );
+  });
 
-    /*
-      Create Mock Token Mint
-    */
+  // ── 4 ─────────────────────────────────────────────────────────────────────
+  it("4. Deposit SOL into vault via pay_with_sol", async () => {
+    const depositLamports = new anchor.BN(0.1 * anchor.web3.LAMPORTS_PER_SOL);
+    const vaultBefore = await provider.connection.getBalance(vaultPda);
 
+    await program.methods
+      .payWithSol(depositLamports)
+      .accounts({
+        payer: payer.publicKey,
+        config: configPda,
+        merchant: merchantPda,
+        vault: vaultPda,
+        treasury: treasuryPda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const vaultAfter = await provider.connection.getBalance(vaultPda);
+    assert.isAbove(
+      vaultAfter,
+      vaultBefore,
+      "Vault SOL balance should increase",
+    );
+  });
+
+  // ── 5 ─────────────────────────────────────────────────────────────────────
+  it("5. Deposit SPL token into vault via pay_with_token", async () => {
     mint = await createMint(
       provider.connection,
       payer.payer,
@@ -125,49 +142,26 @@ describe("merchant-vault", () => {
       6,
     );
 
-    console.log("\n=== MINT ===");
-    console.log("Mint Address:        ", mint.toBase58());
-    console.log("Decimals:            ", 6);
-    console.log("Mint Authority:      ", payer.publicKey.toBase58());
-
-    /*
-      Create Token Accounts
-    */
-
-    const payerAta = await getOrCreateAssociatedTokenAccount(
+    payerAta = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       payer.payer,
       mint,
       payer.publicKey,
     );
-
-    const vaultAta = await getOrCreateAssociatedTokenAccount(
+    vaultAta = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       payer.payer,
       mint,
       vaultPda,
       true,
     );
-
-    const treasuryAta = await getOrCreateAssociatedTokenAccount(
+    treasuryAta = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       payer.payer,
       mint,
       treasuryPda,
       true,
     );
-
-    console.log("\n=== TOKEN ACCOUNTS ===");
-    console.log("Payer ATA:           ", payerAta.address.toBase58());
-    console.log("Payer ATA owner:     ", payerAta.owner.toBase58());
-    console.log("Vault ATA:           ", vaultAta.address.toBase58());
-    console.log("Vault ATA owner:     ", vaultAta.owner.toBase58());
-    console.log("Treasury ATA:        ", treasuryAta.address.toBase58());
-    console.log("Treasury ATA owner:  ", treasuryAta.owner.toBase58());
-
-    /*
-      Mint Tokens To Payer
-    */
 
     await mintTo(
       provider.connection,
@@ -178,44 +172,24 @@ describe("merchant-vault", () => {
       1_000_000_000,
     );
 
-    const payerAtaBefore = await getAccount(
-      provider.connection,
-      payerAta.address,
-    );
-    console.log("\n=== BALANCES BEFORE PAYMENT ===");
-    console.log(
-      "Payer token balance: ",
-      Number(payerAtaBefore.amount) / 1_000_000,
-      "tokens",
-    );
-    console.log(
-      "Vault token balance: ",
-      Number(vaultAta.amount) / 1_000_000,
-      "tokens",
-    );
-    console.log(
-      "Treasury balance:    ",
-      Number(treasuryAta.amount) / 1_000_000,
-      "tokens",
-    );
+    // ✅ Fetch current payment_count from merchant to derive correct payment PDA
+    // Your Rust seeds are: ["payment", merchant_key, payment_count.to_le_bytes()]
+    const merchantAccount = await program.account.merchant.fetch(merchantPda);
+    const paymentCount =
+      merchantAccount.paymentCount ??
+      (merchantAccount as any).payment_count ??
+      0;
 
-    /*
-      Pay With Token
-    */
-
-    const amount = new anchor.BN(1_000_000); // 1 token
+    const countBytes = Buffer.alloc(8);
+    countBytes.writeBigUInt64LE(BigInt(paymentCount));
 
     const [paymentPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("payment"),
-        merchantPda.toBuffer(),
-        payer.publicKey.toBuffer(),
-      ],
+      [Buffer.from("payment"), merchantPda.toBuffer(), countBytes],
       program.programId,
     );
 
     await program.methods
-      .payWithToken(amount)
+      .payWithToken(new anchor.BN(1_000_000))
       .accounts({
         payer: payer.publicKey,
         config: configPda,
@@ -231,75 +205,98 @@ describe("merchant-vault", () => {
       })
       .rpc();
 
-    const paymentAccount = await program.account.payment.fetch(paymentPda);
-    console.log("\n=== 🧾 PAYMENT RECORD ===");
-    console.log("Payment PDA:         ", paymentPda.toBase58());
-    console.log("Payer:               ", paymentAccount.payer.toBase58());
-    console.log("Mint:                ", paymentAccount.mint.toBase58());
-    console.log("Amount:              ", paymentAccount.amount.toString());
-    console.log("Fee Amount:          ", paymentAccount.feeAmount.toString());
-    console.log(
-      "Timestamp:           ",
-      new Date(paymentAccount.timestamp.toNumber() * 1000).toISOString(),
+    const expectedFee = (1_000_000 * 150) / 10_000;
+    const expectedMerchant = 1_000_000 - expectedFee;
+
+    const vaultToken = await getAccount(provider.connection, vaultAta.address);
+    const treasuryToken = await getAccount(
+      provider.connection,
+      treasuryAta.address,
     );
-    console.log("Bump:                ", paymentAccount.bump);
 
-    /*
-      Assert Balances
-    */
+    assert.equal(
+      Number(vaultToken.amount),
+      expectedMerchant,
+      "Vault receives correct amount after fee",
+    );
+    assert.equal(
+      Number(treasuryToken.amount),
+      expectedFee,
+      "Treasury receives correct fee",
+    );
+  });
 
-    const vaultTokenAccount = await getAccount(
+  // ── 6 ─────────────────────────────────────────────────────────────────────
+  it("6. Withdraw SOL from vault via withdraw_sol", async () => {
+    const withdrawLamports = new anchor.BN(0.01 * anchor.web3.LAMPORTS_PER_SOL);
+    const vaultBefore = await provider.connection.getBalance(vaultPda);
+    const payerBefore = await provider.connection.getBalance(payer.publicKey);
+
+    await program.methods
+      .withdrawSol(withdrawLamports)
+      .accounts({
+        authority: payer.publicKey,
+        merchant: merchantPda,
+        vault: vaultPda,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const vaultAfter = await provider.connection.getBalance(vaultPda);
+    const payerAfter = await provider.connection.getBalance(payer.publicKey);
+
+    assert.isBelow(vaultAfter, vaultBefore, "Vault SOL should decrease");
+    assert.isAbove(
+      payerAfter,
+      payerBefore - anchor.web3.LAMPORTS_PER_SOL,
+      "Payer should receive SOL minus tx fees",
+    );
+  });
+
+  // ── 7 ─────────────────────────────────────────────────────────────────────
+  it("7. Withdraw SPL token from vault via withdraw_token", async () => {
+    const withdrawAmount = new anchor.BN(500_000); // 0.5 tokens
+
+    const vaultAtaBefore = await getAccount(
       provider.connection,
       vaultAta.address,
     );
-    const treasuryTokenAccount = await getAccount(
+    const payerAtaBefore = await getAccount(
       provider.connection,
-      treasuryAta.address,
+      payerAta.address,
+    );
+
+    // ✅ Real on-chain call — requires withdraw_token in lib.rs
+    await program.methods
+      .withdrawToken(withdrawAmount)
+      .accounts({
+        authority: payer.publicKey,
+        merchant: merchantPda,
+        vault: vaultPda,
+        vaultTokenAccount: vaultAta.address,
+        authorityTokenAccount: payerAta.address,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const vaultAtaAfter = await getAccount(
+      provider.connection,
+      vaultAta.address,
     );
     const payerAtaAfter = await getAccount(
       provider.connection,
       payerAta.address,
     );
 
-    const expectedFee = (1_000_000 * 150) / 10000;
-    const expectedMerchant = 1_000_000 - expectedFee;
-
-    console.log("\n=== BALANCES AFTER PAYMENT ===");
-    console.log(
-      "Payer token balance: ",
-      Number(payerAtaAfter.amount) / 1_000_000,
-      "tokens",
+    assert.equal(
+      Number(vaultAtaAfter.amount),
+      Number(vaultAtaBefore.amount) - 500_000,
+      "Vault should decrease by exactly 0.5 tokens",
     );
-    console.log(
-      "Vault token balance: ",
-      Number(vaultTokenAccount.amount) / 1_000_000,
-      "tokens",
-    );
-    console.log(
-      "Treasury balance:    ",
-      Number(treasuryTokenAccount.amount) / 1_000_000,
-      "tokens",
-    );
-    console.log(
-      "Expected merchant:   ",
-      expectedMerchant / 1_000_000,
-      "tokens",
-    );
-    console.log("Expected fee:        ", expectedFee / 1_000_000, "tokens");
-
-    assert.equal(Number(vaultTokenAccount.amount), expectedMerchant);
-    assert.equal(Number(treasuryTokenAccount.amount), expectedFee);
-
-    console.log("\n=== ASSERTIONS PASSED ===");
-    console.log(
-      "Vault received:   ",
-      Number(vaultTokenAccount.amount) / 1_000_000,
-      "tokens",
-    );
-    console.log(
-      "Treasury received:",
-      Number(treasuryTokenAccount.amount) / 1_000_000,
-      "tokens",
+    assert.equal(
+      Number(payerAtaAfter.amount),
+      Number(payerAtaBefore.amount) + 500_000,
+      "Payer should receive exactly 0.5 tokens",
     );
   });
 });

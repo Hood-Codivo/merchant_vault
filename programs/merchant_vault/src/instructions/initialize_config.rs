@@ -7,7 +7,7 @@ pub struct Initialize<'info> {
         init,
         payer = payer,
         space = Config::DISCRIMINATOR.len() + Config::INIT_SPACE,
-        seeds = [b"config"],
+        seeds = [b"config" ],
         bump
     )]
     pub config: Account<'info, Config>,
