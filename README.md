@@ -1,6 +1,6 @@
 This is a deterministic, non-custodial, revenue-generating merchant vault protocol on Solana with automated fee splitting.
 
-A smart contract that allows customers to pay merchants in SOL or SPL tokens, automatically deducts 1.5% platform fee, and lets merchants withdraw securely — without admin control.
+A program that allows customers to pay merchants in SOL or SPL tokens, automatically deducts 1.5% platform fee, and lets merchants withdraw securely — without admin control.
 
 The Flow diagram 
 
@@ -60,15 +60,11 @@ Upgrade authority: ./keys/sponsor-keypair.json
 
 Deploying program "merchant_vault"...
 
-Program path: /mnt/c/Users/godwi/merchant_vault/target/deploy/merchant_vault.so...
+Program Id: 57iN23Yr2fMV8bLcmtCXXWsnayE7LidWsHDYGRsn7bPZ
 
-Program Id: 2vm8xz2TFAQH2N6ijqLNRt6J7bh8h7hy92hYM19Vy4SD                                                                                     
+Signature: 4dv7qrwUeb8WKnFuZjFcGiCAeBAXCjKEr7ERfpPgvTHMAG6RVGBtj2hpVSZP1qrWMhw7HJ2RiCK9uJy7GPPMQ7Gy
 
-Signature: 3xfhaz1crdrFFRY2MUiYQf3NmbmmYBXxoPvH3bk5akPp1XyNpkvAxJYpL3TNT72FdHnqmjQwNbspzfec3SewmKJC
+<img width="2880" height="1706" alt="image" src="https://github.com/user-attachments/assets/6c003e56-b671-4a4c-baca-326b9e112818" />
 
-<img width="2880" height="1710" alt="image" src="https://github.com/user-attachments/assets/6067e015-02dd-4e77-910c-0729fc104b97" />
 
-Did a test with token to (mockup USDC)
-
-<img width="2880" height="1700" alt="image" src="https://github.com/user-attachments/assets/e0f9cdbb-ce48-4752-a991-e1812398675a" />
 
